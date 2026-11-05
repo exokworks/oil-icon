@@ -10,7 +10,7 @@ The common image path (gpt-image via Codex / OpenAI) is text-only — it cannot 
    - **Shape language** — line vs fill, stroke weight, corner radius, geometric vs organic.
    - **Mood / finish** — flat / duotone / 3D / hand-drawn; calm vs energetic; warm vs cool.
 3. Pick the closest built-in as a base, then override its `palette` and `preamble` to match. Lock the extracted hex.
-4. Add a **construction system** (grid, stroke, corner radius, terminal style, detail budget) and, ideally, a **brand motif** that recurs across every icon. This — not the colour — is what makes a set feel designed and brand-specific rather than generic-tinted. Calibrate any accent by **visual weight** — keep it lighter and smaller than the defining element (a thin line carries only a light, small accent), and consider a soft gradient / material for a library-grade feel; see `reference/construction.md` → Visual weight & accents.
+4. Add a **construction system** (grid, stroke, corner radius, terminal style, detail budget) and, ideally, a **brand motif** that recurs across every icon. This — not the colour — is what makes a set feel designed and brand-specific rather than generic-tinted. Calibrate any accent by **visual weight** — keep it lighter and smaller than the defining element (a thin line carries only a light, small accent), and consider a soft gradient / material for a library-grade feel; see `references/construction.md` → Visual weight & accents.
 
 ## B. Adapt a built-in preset
 

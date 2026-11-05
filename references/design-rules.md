@@ -4,7 +4,7 @@
 
 ## 一、工具约束
 
-- 常见的 gpt-image 路径（Codex / OpenAI Images）只接受 `prompt` 文本、不能喂参考图 → 风格一致靠统一提示词；画图工具按能力自适应选择（见 `reference/image-providers.md`），稳定切割靠切图脚本。
+- 常见的 gpt-image 路径（Codex / OpenAI Images）只接受 `prompt` 文本、不能喂参考图 → 风格一致靠统一提示词；画图工具按能力自适应选择（见 `references/image-providers.md`），稳定切割靠切图脚本。
 - 输出是位图 PNG（约 1254×1254 方图），不是矢量；尺寸 / 透明 / 张数不可直接指定，全在 prompt 里描述。
 - 位图 hold 不住"系统级"图标（见第五节）。
 

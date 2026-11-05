@@ -1,6 +1,6 @@
 # Composing a generation prompt
 
-A sheet prompt = **style preamble** + **construction** + **palette lock** + **icon list** + **composition**, in that order. Send it to your chosen image provider (see `reference/image-providers.md`) to render one sheet on flat grey.
+A sheet prompt = **style preamble** + **construction** + **palette lock** + **icon list** + **composition**, in that order. Send it to your chosen image provider (see `references/image-providers.md`) to render one sheet on flat grey.
 
 ## Composition (fixed for every sheet, use verbatim)
 

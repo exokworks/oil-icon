@@ -111,7 +111,7 @@ npx skills add exokworks/oil-icon
 
 - `SKILL.md`：完整工作流与执行规则
 - `styles/`：内置风格和构造规范
-- `reference/`：提示词、品牌适配、图标设计与生成说明
+- `references/`：提示词、品牌适配、图标设计、生成与 API Key 配置说明
 - `scripts/`：环境安装、切图和背景移除工具
 - `reference-projects/`：本地存放其他参考项目，已加入 Git 忽略（新克隆可运行 `mkdir -p reference-projects`）
 - `LOCAL_CHANGES.md`：本地更新简史
