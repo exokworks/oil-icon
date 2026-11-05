@@ -116,7 +116,7 @@ def main():
             obj = Image.fromarray(rgba, "RGBA")
             side = int(max(obj.size) * 1.16)
             canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-            canvas.paste(obj, ((side - obj.width) // 2, (side - obj.height) // 2), obj)
+            canvas.paste(obj, ((side - obj.width) // 2, (side - obj.height) // 2))
             canvas.resize((a.size, a.size), Image.LANCZOS).save(outdir / f"{idx:02d}.png")
             idx += 1
     print(f"{a.sheet} -> {a.outdir}  mode={a.mode}  cells={idx-1}" + (f"  ⚠ {warned}" if warned else "  ✓"))
