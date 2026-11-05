@@ -206,6 +206,33 @@ class AutomaticQATests(unittest.TestCase):
         self.assertEqual(len(losses), 1)
         self.assertEqual(losses[0]['pixels'], 80)
 
+    def test_reports_attached_detail_loss_when_main_component_is_retained(self):
+        rgb = np.full((128, 128, 3), (136, 136, 135), dtype=np.uint8)
+        rgb[35:95, 30:80] = (240, 210, 160)
+        rgb[54:57, 80:100] = (30, 80, 220)
+        background = module.estimate_background(rgb)
+        source = (module.colour_distance(rgb, background['rgb']) > background['tolerance'] + 2)
+        self.assertEqual(len(module.regions(source)), 1)
+
+        alpha = np.zeros((128, 128), dtype=np.uint8)
+        alpha[35:95, 30:80] = 255
+        report = module.inspect_cell(rgb, rgb, alpha, alpha, (0, 0, 128, 128), background, 24)
+        losses = [finding for finding in report['findings'] if finding['code'] == 'possible_cutout_loss']
+        self.assertEqual(len(losses), 1)
+        self.assertEqual(losses[0]['pixels'], 60)
+        self.assertEqual(losses[0]['regions'][0]['bbox'], [80, 54, 100, 57])
+
+    def test_does_not_report_visible_semtransparent_detail_as_lost(self):
+        rgb = np.full((128, 128, 3), (136, 136, 135), dtype=np.uint8)
+        rgb[35:95, 30:80] = (240, 210, 160)
+        rgb[54:57, 80:100] = (30, 80, 220)
+        background = module.estimate_background(rgb)
+        alpha = np.zeros((128, 128), dtype=np.uint8)
+        alpha[35:95, 30:80] = 255
+        alpha[54:57, 80:100] = 128
+        report = module.inspect_cell(rgb, rgb, alpha, alpha, (0, 0, 128, 128), background, 24)
+        self.assertNotIn('possible_cutout_loss', {finding['code'] for finding in report['findings']})
+
     def test_cli_writes_qa_for_all_16_icons_and_keeps_action_lines(self):
         with tempfile.TemporaryDirectory() as directory:
             sheet = Path(directory) / 'sheet.png'

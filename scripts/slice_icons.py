@@ -198,15 +198,15 @@ def inspect_cell(rgb, cutout_rgb, before, after, bounds, background, thresh):
         bg, tolerance = background['rgb'], background['tolerance']
         similar = colour_distance(cutout_rgb, bg) <= max(thresh, tolerance)
         flag('background_like_foreground', 'Retained pixels resemble the backdrop; inspect for grey residue or intentional grey detail.', similar & visible & owned)
-        # Look for whole source components lost by rembg before cleanup. This is
-        # a colour/geometry heuristic, not recognition of the depicted object.
+        # Compare locally so a missing accent attached to a retained body is
+        # reported even when both form one source-image component.
         source = (colour_distance(rgb, bg) > tolerance + 2) & owned
-        labels, n = ndimage.label(source, structure=CONNECTED)
-        sizes = np.bincount(labels.ravel(), minlength=n + 1)
-        retained = np.bincount(labels[before > 32], minlength=n + 1)
-        missing = (sizes >= 3) & (retained < 0.2 * sizes)
-        missing[0] = False
-        flag('possible_cutout_loss', 'A source component is mostly missing from the cutout.', missing[labels])
+        missing = source & (before <= 32)
+        flag(
+            'possible_cutout_loss',
+            'Foreground-coloured source pixels are nearly transparent after cutout; inspect for lost details.',
+            missing,
+        )
 
     rim = owned & ~ndimage.binary_erosion(owned)
     flag('cell_boundary', 'Foreground reaches a cell boundary; check clipping or neighbour bleed.', visible & rim)
