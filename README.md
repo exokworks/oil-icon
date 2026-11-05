@@ -104,7 +104,7 @@ npx skills add exokworks/oil-icon
 [$oil-icon] 为我的 AI 写作工具生成一套柔软 3D 图标，包含创作、改写、翻译、素材、历史和导出。
 ```
 
-`oil-icon` 会优先使用 Agent 当前可用的图片生成能力；没有内置图片工具时，直接使用已授权的外部图片 API，不再启动 Codex CLI。切图与检查流程保持一致。
+`oil-icon` 会优先使用 Agent 当前可用的图片生成能力；没有内置图片工具时，使用已授权的外部图片 API。切图与检查流程保持一致。
 
 <details>
 <summary><strong>仓库里有什么</strong></summary>

@@ -4,7 +4,7 @@ The slicing pipeline is provider-agnostic: it only needs a **PNG sheet rendered 
 
 ## Detection order
 
-1. **Built-in / host imagegen first.** If the running agent has a callable text-to-image tool — Codex's built-in `image_gen`, the `imagegen` skill, another image-generation tool, or an MCP — use it directly. Never start external Codex CLI for image generation. Built-in imagegen may write to `$CODEX_HOME/generated_images/...` instead of a requested path; after generation, move or copy the selected PNG to `raw/<style>.png`.
+1. **Built-in / host imagegen first.** If the running agent has a callable text-to-image tool — Codex's built-in `image_gen`, the `imagegen` skill, another image-generation tool, or an MCP — use it directly. Built-in imagegen may write to `$CODEX_HOME/generated_images/...` instead of a requested path; after generation, move or copy the selected PNG to `raw/<style>.png`.
 2. **External API otherwise.** If the agent has no callable image-generation tool, use the already authorized supplier; ask for a supplier if none is selected. For **OpenAI Images (gpt-image)**, `scripts/gen_image.py --prompt "…" --out raw/<style>.png` reads `OPENAI_API_KEY` directly from the environment. If it is missing, stop and let the user configure their trusted runtime; do not request a Key in chat. `OPENAI_BASE_URL` optionally specifies an OpenAI-compatible API root including `/v1`, and `OPENAI_USER_AGENT` overrides the request identifier. For any other API (Replicate, Fal, Stability, a self-hosted model...), call it directly to produce the PNG.
 
 ## The contract
