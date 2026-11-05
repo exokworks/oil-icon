@@ -7,7 +7,8 @@ directly instead — this script is just the ready-made OpenAI path.
 
   gen_image.py --prompt "<full sheet prompt>" --out raw/<style>.png
 
-Reads OPENAI_API_KEY from the environment. No third-party deps (stdlib only).
+Reads OPENAI_API_KEY plus optional OPENAI_BASE_URL and OPENAI_USER_AGENT
+from the environment. No third-party deps (stdlib only).
 """
 import argparse, base64, json, os, sys, urllib.request
 
@@ -23,12 +24,15 @@ def main():
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         sys.exit("OPENAI_API_KEY is not set")
+    base_url = os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+    user_agent = os.environ.get("OPENAI_USER_AGENT") or "Mozilla/5.0 (compatible; oil-icon/1.0)"
 
     body = json.dumps({"model": a.model, "prompt": a.prompt, "size": a.size, "n": 1}).encode()
     req = urllib.request.Request(
-        "https://api.openai.com/v1/images/generations",
+        f"{base_url.rstrip('/')}/images/generations",
         data=body,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "User-Agent": user_agent},
     )
     with urllib.request.urlopen(req, timeout=300) as r:
         data = json.load(r)

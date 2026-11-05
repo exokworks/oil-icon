@@ -113,6 +113,9 @@ npx skills add oil-oil/oil-icon
 - `styles/`：内置风格和构造规范
 - `reference/`：提示词、品牌适配、图标设计与生成说明
 - `scripts/`：环境安装、切图和背景移除工具
+- `reference-projects/`：本地存放其他参考项目，已加入 Git 忽略（新克隆可运行 `mkdir -p reference-projects`）
+- `LOCAL_CHANGES.md`：本地更新简史
+- `UPSTREAM_SYNC.md`：从上游拉取与仅向 `origin` 推送的规范
 
 </details>
 

@@ -36,6 +36,14 @@ node "$SKILL_DIR/scripts/credential-ui/src/profile.ts" run default -- python3 "$
 
 环境变量优先；缺失时仅从系统库读取当前配置所需的 Key，并只注入可信业务子进程。参数、普通文件和状态输出都不含 Key。使用页面保存的凭据后，后续云端业务命令同样经 run 入口执行，不能只启动配置页后直接运行一个仍仅读环境变量的程序。`--help` 示例只检查业务用法，不表示已调用服务。
 
+使用兼容 OpenAI Images 的自定义接口时，可在运行环境设置 `OPENAI_BASE_URL` 为 API 根地址（如 `https://example.com/v1`，末尾 `/` 可选）；脚本会请求其 `/images/generations`。未设置或为空时使用 `https://api.openai.com/v1`。该变量不是 Key，不在凭据页面保存；`run` 会将其从当前环境传给业务脚本，例如：
+
+```bash
+OPENAI_BASE_URL="https://example.com/v1" node "$SKILL_DIR/scripts/credential-ui/src/profile.ts" run default -- python3 "$SKILL_DIR/scripts/gen_image.py" --prompt "图标设计要求" --out "/path/to/icons.png"
+```
+
+脚本显式发送 `User-Agent: Mozilla/5.0 (compatible; oil-icon/1.0)`，不再使用 `Python-urllib/...` 默认值。如果自定义网关对请求标识有要求，可在同一命令前设置 `OPENAI_USER_AGENT="网关允许的标识"` 覆盖；`run` 同样会传给业务脚本。更换请求头不能保证通过 Cloudflare 的挑战或其他 WAF 规则，必要时须由网关管理员放行 API 路径。
+
 系统后端分别为 macOS 钥匙串、Windows 凭据管理器、Linux Secret Service。Linux 需要 secret-tool、用户 D-Bus 和已解锁的桌面凭据服务；缺少后端时停止，不自动安装、解锁或降级明文。当前 macOS 组件有原生假凭据验证；Windows/Linux 适配仍需实机验收。CI、容器与远程服务器使用已有 Secret 注入，不把本机页面开放到网络。
 
 原配置不自动迁移或删除；页面保存不代表旧明文文件已经清理。已有程序专用配置、账号或不同凭据引用按其原流程保留，不跨账号覆盖。凭据属于当前系统用户；正常流程不将其传入对话，不代表对同用户任意代码执行的强隔离。

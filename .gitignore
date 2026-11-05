@@ -12,3 +12,4 @@ out/
 !assets/readme/showcase-soft3d/*.png
 !assets/readme/showcase-isometric/*.png
 node_modules/
+reference-projects/
