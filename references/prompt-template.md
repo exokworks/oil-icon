@@ -9,6 +9,7 @@ A sheet prompt = **style preamble** + **construction** + **palette lock** + **ic
 - {GRID} = `4x4`, {N} = `16` by default — or `3x3` / `9` for maximum slicing stability.
 - For an exact requested count below 16, keep `{GRID}` as `4x4`: generate icons only in the first `N` row-major positions, and leave cells `N+1..16` completely empty as plain grey `#808080` background. Do not add placeholder marks, ghost shapes, labels, dots, frames, or faint icons in the empty cells.
 - For partial sheets, spell out both the row layout and the real icon center points. Use `x=12.5%, 37.5%, 62.5%, 87.5%` and `y=12.5%, 37.5%, 62.5%, 87.5%` for the 4x4 cells. This is mandatory because image models may otherwise compress a small count into one row or shift the occupied rows upward.
+- `#808080` is the requested target; do not assume the generated pixels match it exactly. The slicer measures the backdrop and reports uncertain estimates.
 - Generous gaps are load-bearing: they give the slicer clean gutters so neighbouring icons stay separate and no fragment bleeds across.
 
 ## Palette lock

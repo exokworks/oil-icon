@@ -1,6 +1,6 @@
 # Image-generation providers
 
-The slicing pipeline is provider-agnostic: it only needs a **PNG sheet rendered on flat grey `#808080`** from a text prompt. Never assume a specific tool is present — choose the provider by the current agent's capabilities, not by the agent name.
+The slicing pipeline is provider-agnostic: it only needs a **PNG sheet requested on flat grey `#808080`** from a text prompt. This is a target colour; slicing measures the actual backdrop and reports unreliable samples. Never assume a specific tool is present — choose the provider by the current agent's capabilities, not by the agent name.
 
 ## Detection order
 
@@ -9,7 +9,7 @@ The slicing pipeline is provider-agnostic: it only needs a **PNG sheet rendered 
 
 ## The contract
 
-Any provider must satisfy one thing: **text prompt → one PNG**, rendered as the 4×4 (or 3×3) sheet on a solid flat grey `#808080` background, roughly square. That is all the slicer needs; everything downstream is identical regardless of provider.
+Any provider must satisfy one thing: **text prompt → one PNG**, rendered as the 4×4 (or 3×3) sheet on a solid flat grey background, targeting `#808080`, roughly square. Exact colour compliance is not assumed; the same background estimation and QA run regardless of provider.
 
 ## Provider notes
 
