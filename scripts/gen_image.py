@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """External-API fallback provider: OpenAI Images (gpt-image).
 
-Used only when the calling agent has no native image tool and Codex is not
-available. For any other API (Replicate, Fal, Stability, …), call that API
-directly instead — this script is just the ready-made OpenAI path.
+Used when the current agent has no callable image-generation tool and OpenAI
+Images is the authorized external provider. For other APIs (Replicate, Fal,
+Stability, …), call the selected provider directly instead.
 
   gen_image.py --prompt "<full sheet prompt>" --out raw/<style>.png
 

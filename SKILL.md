@@ -11,19 +11,18 @@ Image generation runs on a flat grey backdrop as a 4×4 sheet — 16 icons in on
 
 Agent owns the design decisions (which style, which palette, which metaphors, whether to match a brand); image generation and slicing are mechanical steps.
 
-## API Key 配置入口
+## 外部 API 环境变量
 
-需要外部服务凭据时先读[API Key 配置与业务读取](references/api-key-setup.md)：复用已有安全入口；本机缺少 Key 时使用随附固定页面，保存后通过业务包装入口读取。内置能力与纯本地流程不要求配置 Key。
+内置生图工具不需要额外 Key。使用已授权的 OpenAI Images 外部 API 时，脚本直接读取可信运行环境中的 `OPENAI_API_KEY`（可选 `OPENAI_BASE_URL`、`OPENAI_USER_AGENT`）；未设置 Key 则停止，告知用户在自己的环境中配置，不在聊天中索取或传递密钥。
 
 ## Workflow
 
 1. **Choose the style.** Either pick a built-in from `styles/` (table below), or **match the user's brand** by reading their project's design tokens / assets and deriving a custom style-spec — see `references/style-adaptation.md`. Freeze the result as a style-spec with the same fields as the built-in JSONs; 后续批次复用同一规范，并检查生成偏差.
 2. **List the icons.** Write each concept as `name — short concrete metaphor` (e.g. `settlement — a wallet with a coin`). One clear idea per icon; keep the detail level consistent across the set. 默认每张 **16** 格；明确选择 **9** 格时，提示词使用 3×3，切图命令必须同时传 `--grid 3`。 If the user asks for an exact count below 16, still use a **4x4 / 16-cell sheet**: place the requested icons first in row-major order, then explicitly ask the remaining cells to stay empty grey background.
 3. **Compose the prompt.** `style.preamble` + the style's `construction` fields (as short guidance) + palette-lock line + numbered metaphors + the fixed composition text — see `references/prompt-template.md` and `references/construction.md`.
-4. **Generate the sheet(s).** Choose an image provider by capability, in order (see `references/image-providers.md`) — never assume Codex is present:
-   1. **Built-in / host imagegen first** — if the running agent already has a callable image-generation tool, including Codex's built-in `image_gen` tool or the `imagegen` skill, call it directly. Do not delegate to external Codex CLI just to reach imagegen from another process.
-   2. **Codex CLI fallback** — only if this agent has no callable image-generation tool, and Codex is available （从可用 Skill 清单定位 codex，或使用 PATH 中已有的 codex）, delegate generation to it.
-   3. **External API fallback** — only if neither of the above exists, 沿用用户已授权的供应商；缺少凭据时按配置说明打开随附页面，不索要聊天中的 Key; for OpenAI Images, `scripts/gen_image.py --prompt "…" --out raw/<style>.png` is ready.
+4. **Generate the sheet(s).** Choose an image provider by capability (see `references/image-providers.md`), regardless of whether the agent runs in Codex:
+   1. **Built-in / host imagegen first** — if the running agent has a callable image-generation tool, including Codex's built-in `image_gen`, the `imagegen` skill, or an MCP, call it directly. Do not start an external Codex CLI.
+   2. **External API otherwise** — if no callable image-generation tool is available, use the supplier the user has authorized; ask for a supplier if none is selected. For OpenAI Images, `scripts/gen_image.py --prompt "…" --out raw/<style>.png` reads `OPENAI_API_KEY` directly from the environment. If it is missing, stop and ask the user to configure it in their trusted runtime; never request a Key in chat.
    Save or copy each generated sheet to `raw/<style>.png` on flat grey `#808080`. Built-in imagegen may save under `$CODEX_HOME/generated_images/...`; after generation, move or copy the selected PNG into the task output `raw/` folder. 同一张图更容易保持共同风格，但仍须逐个验收，不能把一次生成视为一致性保证； a provider only has to turn the prompt into a grey-background PNG.
 5. **Slice.** Run `scripts/setup.sh` once, then:
    `.venv/bin/python3 scripts/slice_icons.py <raw>.png <outdir> --mode <cutout> [--thresh N] [--grid 4] [--count N]`

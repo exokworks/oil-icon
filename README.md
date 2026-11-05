@@ -104,14 +104,14 @@ npx skills add exokworks/oil-icon
 [$oil-icon] 为我的 AI 写作工具生成一套柔软 3D 图标，包含创作、改写、翻译、素材、历史和导出。
 ```
 
-`oil-icon` 会优先使用 Agent 当前可用的图片生成能力；没有内置图片工具时，再根据环境选择其他生成方式。切图与检查流程保持一致。
+`oil-icon` 会优先使用 Agent 当前可用的图片生成能力；没有内置图片工具时，直接使用已授权的外部图片 API，不再启动 Codex CLI。切图与检查流程保持一致。
 
 <details>
 <summary><strong>仓库里有什么</strong></summary>
 
 - `SKILL.md`：完整工作流与执行规则
 - `styles/`：内置风格和构造规范
-- `references/`：提示词、品牌适配、图标设计、生成与 API Key 配置说明
+- `references/`：提示词、品牌适配、图标设计与图片生成说明
 - `scripts/`：环境安装、切图和背景移除工具
 - `reference-projects/`：本地存放其他参考项目，已加入 Git 忽略（新克隆可运行 `mkdir -p reference-projects`）
 - `LOCAL_CHANGES.md`：本地更新简史
@@ -139,8 +139,10 @@ MIT
 用 oil-icon 为这六个功能画一组配套图标。
 ```
 
-## API Key 配置页面
+## 外部图片 API
 
-首次使用外部服务时，可以在本机配置页亲自填写 Key；已有配置会复用，密钥存入系统凭据库。只为实际使用的外部服务配置；纯本地处理不需要 Key。页面需要 Node.js 22.18+ 与可用的系统凭据服务，业务运行仍使用原依赖。
+Agent 没有内置生图工具时，可使用已授权的外部服务。OpenAI Images 脚本直接读取 `OPENAI_API_KEY`（可选 `OPENAI_BASE_URL` 和 `OPENAI_USER_AGENT`），不提供本机凭据管理；缺少 Key 时先在可信运行环境中配置，不要发送到聊天。将 `SKILL.md` 所在目录记为 `SKILL_DIR`，然后运行：
 
-安装、状态检查、打开页面和带凭据运行的完整入口见[配置说明](references/api-key-setup.md)。页面保存与业务读取已经接通；不把 Key 发进聊天，也不自动迁移旧文件。
+```bash
+python3 "$SKILL_DIR/scripts/gen_image.py" --prompt "图标设计要求" --out "/path/to/icons.png"
+```

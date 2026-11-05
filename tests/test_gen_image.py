@@ -12,8 +12,8 @@ from unittest.mock import patch
 from contextlib import redirect_stdout
 spec=importlib.util.spec_from_file_location('icons',Path(__file__).parents[1]/'scripts/gen_image.py')
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-class CredentialTests(unittest.TestCase):
-    def test_actual_client_consumes_profile_key_without_printing_it(self):
+class GenImageTests(unittest.TestCase):
+    def test_environment_key_authorizes_image_request_without_printing_it(self):
         def response(request,**kwargs):
             self.assertEqual(request.get_header('Authorization'),'Bearer TEST_ONLY_ICON')
             self.assertEqual(request.get_header('User-agent'), 'Mozilla/5.0 (compatible; oil-icon/1.0)')

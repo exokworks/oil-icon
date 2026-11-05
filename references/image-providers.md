@@ -1,12 +1,11 @@
 # Image-generation providers
 
-The slicing pipeline is provider-agnostic: it only needs a **PNG sheet rendered on flat grey `#808080`** from a text prompt. Never assume a specific tool is present — pick a provider by capability detection, in this order.
+The slicing pipeline is provider-agnostic: it only needs a **PNG sheet rendered on flat grey `#808080`** from a text prompt. Never assume a specific tool is present — choose the provider by the current agent's capabilities, not by the agent name.
 
 ## Detection order
 
-1. **Built-in / host imagegen first.** If you (the agent running this skill) already have a callable text-to-image tool — Codex's built-in `image_gen`, the `imagegen` skill, another image-generation tool, or an MCP — use it directly. Do not launch external Codex CLI in this case. Built-in imagegen may write to `$CODEX_HOME/generated_images/...` instead of a requested path; after generation, move or copy the selected PNG to `raw/<style>.png`.
-2. **Codex CLI fallback.** Only if the running agent has no callable image-generation tool, and Codex is available — 从已安装 Skill 清单定位 `codex` 的包装脚本，或使用 PATH 中已有的 `codex` — delegate generation to it: pass the composed prompt and have it save the PNG to `raw/<style>.png`.
-3. **External API fallback.** Only if neither of the above exists, 沿用已授权的供应商；缺少供应商选择时询问，凭据按 [API Key 配置](api-key-setup.md) 通过固定页面提供；脚本调用必须经其中的 run 入口，不进入聊天. For **OpenAI Images (gpt-image)**, `scripts/gen_image.py --prompt "…" --out raw/<style>.png` is ready (reads `OPENAI_API_KEY`; optional `OPENAI_BASE_URL` specifies the API root, including `/v1`, and `OPENAI_USER_AGENT` overrides the request identifier for an OpenAI-compatible endpoint). For any other API (Replicate, Fal, Stability, a self-hosted model...), call it directly to produce the PNG.
+1. **Built-in / host imagegen first.** If the running agent has a callable text-to-image tool — Codex's built-in `image_gen`, the `imagegen` skill, another image-generation tool, or an MCP — use it directly. Never start external Codex CLI for image generation. Built-in imagegen may write to `$CODEX_HOME/generated_images/...` instead of a requested path; after generation, move or copy the selected PNG to `raw/<style>.png`.
+2. **External API otherwise.** If the agent has no callable image-generation tool, use the already authorized supplier; ask for a supplier if none is selected. For **OpenAI Images (gpt-image)**, `scripts/gen_image.py --prompt "…" --out raw/<style>.png` reads `OPENAI_API_KEY` directly from the environment. If it is missing, stop and let the user configure their trusted runtime; do not request a Key in chat. `OPENAI_BASE_URL` optionally specifies an OpenAI-compatible API root including `/v1`, and `OPENAI_USER_AGENT` overrides the request identifier. For any other API (Replicate, Fal, Stability, a self-hosted model...), call it directly to produce the PNG.
 
 ## The contract
 
