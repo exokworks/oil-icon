@@ -81,7 +81,7 @@
 **方式一 · 执行命令**
 
 ```bash
-npx skills add oil-oil/oil-icon
+npx skills add exokworks/oil-icon
 ```
 
 **方式二 · 直接交给 Agent**
@@ -89,7 +89,7 @@ npx skills add oil-oil/oil-icon
 把下面这句话发给任何支持 Skill 的 Agent：
 
 ```text
-请安装这个 Skill：https://github.com/oil-oil/oil-icon
+请安装这个 Skill：https://github.com/exokworks/oil-icon
 ```
 
 安装完成后，可以直接描述图标清单和使用场景：
