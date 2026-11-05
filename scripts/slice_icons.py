@@ -10,6 +10,7 @@ cutout 模式：
   rembg     —— 软边 / 3D / 反光 / 照片，ML 抠图
 """
 import sys, argparse
+import os
 from pathlib import Path
 import numpy as np
 from PIL import Image
@@ -62,6 +63,18 @@ def clean(alpha):
     return out
 
 
+def create_rembg_session():
+    """Use the same model cache and CPU provider during setup and slicing."""
+    if not os.environ.get("U2NET_HOME") and not os.environ.get("REMBG_HOME"):
+        os.environ["U2NET_HOME"] = str(Path(__file__).resolve().parents[1] / ".venv" / "models")
+    try:
+        from rembg import new_session
+    except ImportError as error:
+        setup = Path(__file__).resolve().with_name("setup.sh")
+        raise RuntimeError(f'rembg dependencies unavailable; run bash "{setup}"') from error
+    return new_session("u2net", providers=["CPUExecutionProvider"])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sheet")
@@ -85,8 +98,7 @@ def main():
     pad = int(0.06 * min(cw, ch))     # 略微外扩，兜住漂出格子的图标
     session = None
     if a.mode == "rembg":
-        from rembg import new_session
-        session = new_session("u2net")
+        session = create_rembg_session()
 
     warned = []
     idx = 1

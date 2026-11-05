@@ -129,7 +129,20 @@ MIT
 
 ## 配置、依赖与使用边界
 
-依赖已授权的生图工具；切图需 scripts/setup.sh 安装的 Python 图像依赖。软边缘风格按需使用 rembg。无需把 Key 发到聊天。
+生图依赖已授权的图片工具，无需把 Key 发到聊天。切图环境统一安装 Pillow、NumPy、SciPy 和 `rembg[cpu]`，用户无需选择安装模式。依赖版本见 [requirements.txt](requirements.txt)。
+
+准备 **Python 3.12 或 3.13**（推荐已实测的 3.12）。将 `SKILL.md` 所在目录的绝对路径记为 `SKILL_DIR`，在任意工作目录运行：
+
+```bash
+bash "$SKILL_DIR/scripts/setup.sh" && \
+"$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/slice_icons.py" "/absolute/task/raw/icons.png" "/absolute/task/out" --mode rembg
+```
+
+脚本优先复用有效的 `.venv`；新建时依次查找 `python3.12`、`python3.13` 和版本兼容的 `python3`，不使用 Python 3.14。若解释器不在 PATH，可运行 `bash "$SKILL_DIR/scripts/setup.sh" --python /path/to/python3.12`。已有环境不兼容或失效时会明确报错，先将 `.venv` 重命名备份再重跑；脚本不会自动清空已有目录。
+
+安装仅使用二进制 wheel，固定 CPU Runtime、Numba 和 LLVM 依赖，避免 Intel Mac 意外进入源码编译。全程显示安装进度与失败阶段；完成 `pip check`、图像依赖导入、U²-Net 模型加载和真实 CPU 推理后才报告就绪。可重复运行同一命令补齐安装并重新验证，无需手动激活环境或调用裸 `pip`。脚本覆盖 pip 的用户级安装选项；若配置了 `target`、`prefix` 或 `root` 安装位置，则在安装前报错，避免依赖写入 `.venv` 之外，同时保留镜像、代理等网络配置。
+
+首次安装需要访问 Python 包索引和 GitHub 下载 U²-Net 模型（约 176 MB）。模型默认缓存在 Skill 的 `.venv/models`，安装和切图自动共用，无需额外配置；已有 `U2NET_HOME` 或 `REMBG_HOME` 则沿用该位置。模型下载失败时修复网络后重跑安装命令。任务图片与输出路径按实际工作目录指定；扁平风格使用 `--mode floodfill`，软边 / 3D / 照片使用 `--mode rembg`。
 
 产物保存在任务目录。9 格使用 --grid 3，16 格使用 --grid 4；小尺寸功能图标优先矢量库。一次生成不保证一致性。
 

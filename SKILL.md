@@ -24,9 +24,12 @@ Agent owns the design decisions (which style, which palette, which metaphors, wh
    1. **Built-in / host imagegen first** — if the running agent has a callable image-generation tool, including Codex's built-in `image_gen`, the `imagegen` skill, or an MCP, call it directly.
    2. **External API otherwise** — if no callable image-generation tool is available, use the supplier the user has authorized; ask for a supplier if none is selected. For OpenAI Images, `scripts/gen_image.py --prompt "…" --out raw/<style>.png` reads `OPENAI_API_KEY` directly from the environment. If it is missing, stop and ask the user to configure it in their trusted runtime; never request a Key in chat.
    Save or copy each generated sheet to `raw/<style>.png` on flat grey `#808080`. Built-in imagegen may save under `$CODEX_HOME/generated_images/...`; after generation, move or copy the selected PNG into the task output `raw/` folder. 同一张图更容易保持共同风格，但仍须逐个验收，不能把一次生成视为一致性保证； a provider only has to turn the prompt into a grey-background PNG.
-5. **Slice.** Run `scripts/setup.sh` once, then:
-   `.venv/bin/python3 scripts/slice_icons.py <raw>.png <outdir> --mode <cutout> [--thresh N] [--grid 4] [--count N]`
-   using the style's `cutout` mode (`floodfill` for flat/hard-edge, `rembg` for soft / 3D / glossy / photo).
+5. **Prepare & slice.** Set `SKILL_DIR` to the absolute directory containing this `SKILL.md`; keep generated files in the task directory. Run the installer before first use (or to repair/recheck the environment):
+   ```bash
+   bash "$SKILL_DIR/scripts/setup.sh" && \
+   "$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/slice_icons.py" "/absolute/task/raw/style.png" "/absolute/task/out" --mode rembg
+   ```
+   Setup installs **all** dependencies into the Skill's `.venv`, prepares U²-Net and verifies CPU inference. It selects Python 3.12/3.13 (3.12 recommended); if needed, pass `--python /path/to/python3.12`. An incompatible existing `.venv` must be moved aside before rebuilding; never clear it automatically. Only proceed after setup reports ready. Use the style's `cutout` mode (`floodfill` flat/hard-edge, `rembg` soft / 3D / glossy / photo), with `--thresh N`, `--grid 3|4` and `--count N` as needed. Setup and slicing share `.venv/models` automatically; respect existing `U2NET_HOME` / `REMBG_HOME` overrides. See [installation details](README.md#配置依赖与使用边界) for network and recovery requirements.
 6. **QA (mandatory).** Composite the sliced PNGs onto a contrasting colour (e.g. magenta) and check every icon for (a) a fragment bled in from a neighbouring cell, (b) leftover grey, and (c) consistency against the style's `construction` — uniform stroke, one radius, matched detail level, shared parts, motif present, single perspective, and no accent out-weighting the defining element (in line styles the accent must be lighter and smaller than the stroke). Re-slice or regenerate any that fail — never ship an icon carrying part of the one above it.
 7. **Deliver** the transparent PNGs, organized and named.
 

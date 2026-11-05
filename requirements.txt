@@ -1,0 +1,9 @@
+# Validated image processing stack for Python 3.12 / 3.13.
+Pillow==13.0.0
+numpy==2.3.5
+scipy==1.18.1
+rembg[cpu]==2.0.86
+# Keep compatible wheels on Intel macOS; avoid Numba/LLVM source builds.
+onnxruntime==1.23.2
+numba==0.62.1
+llvmlite==0.45.1
