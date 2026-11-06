@@ -19,5 +19,5 @@
     "motif": null
   },
   "fits": "E-commerce product tiles, landing heroes. These are product images more than icons.",
-  "notes": "Insist on a perfectly flat grey backdrop with no gradient or vignette. rembg cuts objects and people cleanly."
+  "notes": "Request a flat grey backdrop without a gradient or vignette. Inspect actual boundaries before choosing cutout; rembg is a candidate, and retained subject details must be checked against the source."
 }

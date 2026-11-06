@@ -106,4 +106,5 @@ STAGE="verifying imports, the U2-Net model and CPU inference"
 "$VENV_PYTHON" "$SKILL_DIR/scripts/check_env.py"
 
 printf '\noil-icon environment ready: %s\n' "$VENV"
-printf 'Slice with: "%s" "%s/scripts/slice_icons.py" sheet.png out --mode rembg\n' "$VENV_PYTHON" "$SKILL_DIR"
+printf 'Slice with: "%s" "%s/scripts/slice_icons.py" sheet.png out\n' "$VENV_PYTHON" "$SKILL_DIR"
+printf 'Agent selects cutout from actual image edges; use the default for separable hard edges and compare rembg with the source and colour candidate when needed.\n'

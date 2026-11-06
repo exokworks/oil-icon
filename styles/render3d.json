@@ -19,5 +19,5 @@
     "motif": null
   },
   "fits": "Rewards, gamification, onboarding heroes.",
-  "notes": "Soft edges and low-contrast objects (a white cloud, etc.) make rembg required."
+  "notes": "Soft or low-contrast boundaries may benefit from rembg. Treat the cutout field as a starting suggestion; compare source and colour candidate for lost details before delivery."
 }

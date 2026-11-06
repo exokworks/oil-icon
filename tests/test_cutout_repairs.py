@@ -136,7 +136,10 @@ class CutoutRepairTests(unittest.TestCase):
         ]}}})
         entry = report['cells'][0]
         self.assertEqual(entry['applied_repairs'][0]['removed_pixels'], 400)
-        self.assertIn('transparent_holes', [item['code'] for item in entry['findings']])
+        codes = {item['code'] for item in entry['findings']}
+        self.assertIn('repaired_background', codes)
+        self.assertNotIn('transparent_holes', codes)
+        self.assertNotIn('possible_cutout_loss', codes)
         with Image.open(out / '01.png') as image:
             self.assertIsNotNone(image.getbbox())
 
@@ -196,6 +199,71 @@ class CutoutRepairTests(unittest.TestCase):
             ]}}})
         with Image.open(out / '01.png') as image:
             np.testing.assert_array_equal(np.asarray(image)[21, 27], [157, 151, 140, 52])
+
+    def test_opted_in_local_edge_unmixing_is_bounded_and_keeps_art(self):
+        rgb = np.full((128, 128, 3), self.bg, dtype=np.uint8)
+        fg = np.array([240, 210, 160])
+        rgb[24:104, 24:104] = fg
+        rgb[42:86, 42:86] = np.rint((self.bg + fg) / 2).astype(np.uint8)
+        rgb[44:84, 44:84] = self.bg + 2
+        alpha = module.floodfill_alpha(rgb, bg=self.bg, tolerance=3)
+        colours, alpha = module.refine_edges(rgb, alpha, self.bg, tolerance=3)
+        repair = {'seed': [55, 55], 'bounds': [40, 40, 88, 88], 'tolerance': 3, 'refine_edge': True}
+        fixed, matte, logs, intentional = module.apply_cutout_repairs(rgb, colours, alpha, self.bg, [repair], tolerance=3)
+        self.assertFalse(matte[44:84, 44:84].any())
+        self.assertGreater(matte[43, 55], 110)
+        self.assertLess(matte[43, 55], 145)
+        np.testing.assert_allclose(fixed[43, 55], fg, atol=2)
+        outside = ~module.cell_mask(alpha.shape, repair['bounds'])
+        np.testing.assert_array_equal(fixed[outside], colours[outside])
+        np.testing.assert_array_equal(matte[outside], alpha[outside])
+        self.assertGreater(logs[0]['refined_edge_pixels'], 100)
+        self.assertTrue(intentional[43, 55])
+        # A legitimate detail without a compatible colour vector stays opaque.
+        rgb[43, 55] = [20, 90, 210]
+        fixed, matte, _, _ = module.apply_cutout_repairs(rgb, rgb, alpha, self.bg, [repair], tolerance=3)
+        np.testing.assert_array_equal(fixed[43, 55], rgb[43, 55])
+        self.assertEqual(matte[43, 55], 255)
+
+    def test_rembg_local_edge_refinement_keeps_model_alpha(self):
+        rgb = np.full((128, 128, 3), self.bg, dtype=np.uint8)
+        rgb[24:104, 24:104] = [240, 210, 160]
+        rgb[42:86, 42:86] = [188, 173, 148]
+        rgb[44:84, 44:84] = self.bg + 2
+        alpha = module.floodfill_alpha(rgb, bg=self.bg, tolerance=3)
+        alpha[42:86, 42:86] = 128
+        alpha[44:84, 44:84] = 255
+        region = {'seed': [55, 55], 'bounds': [40, 40, 88, 88], 'tolerance': 3, 'refine_edge': True}
+        fixed, matte, logs, _ = module.apply_cutout_repairs(rgb, rgb, alpha, self.bg, [region], tolerance=3, infer_alpha=False)
+        self.assertEqual(matte[43, 55], 128)
+        np.testing.assert_allclose(fixed[43, 55], [240, 210, 160], atol=2)
+        self.assertGreater(logs[0]['refined_edge_pixels'], 0)
+        self.assertFalse(matte[44:84, 44:84].any())
+
+    def test_intentional_removal_does_not_hide_unrelated_missing_detail(self):
+        self.rgb[40:60, 40:60] = self.bg + 8
+        self.rgb[58:63, 104:115] = (30, 190, 60)
+        background = module.estimate_background(self.rgb)
+        alpha = module.floodfill_alpha(self.rgb, bg=self.bg, tolerance=3)
+        alpha[58:63, 104:115] = 0
+        repaired_rgb, alpha, _, intentional = module.apply_cutout_repairs(self.rgb, self.rgb, alpha, self.bg, [
+            {'seed': [45, 45], 'bounds': [38, 38, 62, 62], 'tolerance': 10},
+        ])
+        report = module.inspect_cell(self.rgb, repaired_rgb, alpha, alpha, (0,0,128,128), background, 24, intentional)
+        loss = next(item for item in report['findings'] if item['code'] == 'possible_cutout_loss')
+        self.assertEqual(loss['pixels'], 55)
+        explained = next(item for item in report['findings'] if item['code'] == 'repaired_background')
+        self.assertEqual(explained['pixels'], 400)
+        self.assertEqual(explained['severity'], 'info')
+
+    def test_invalid_refine_edge_fails_before_export(self):
+        self.rgb[40:60,40:60] = self.bg + 2
+        for value in (1, 'true', None):
+            with self.subTest(value=value), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.run_cli(self.rgb, repairs={'cells': {'1': {'erase_regions': [
+                    {'seed': [45,45], 'bounds': [38,38,62,62], 'tolerance': 3, 'refine_edge': value},
+                ]}}})
+            self.assertFalse((self.root / 'out').exists())
 
     def test_duplicate_repair_keys_are_rejected_before_export_or_overwrite(self):
         cases = [

@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,17 @@ with open(os.environ['SETUP_CHECK_LOG'], 'a') as log:
         (venv / 'bin/pip').write_text('#!/nonexistent/old/location/python\n')
         second = self.run_setup()
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        # The ready message must leave edge-based selection to the agent;
+        # quoting must also keep paths with spaces runnable when copied.
+        for result in (first, second):
+            commands = [line.removeprefix('Slice with: ') for line in result.stdout.splitlines()
+                        if line.startswith('Slice with: ')]
+            self.assertEqual(len(commands), 1)
+            self.assertEqual(shlex.split(commands[0]), [
+                str(venv.resolve() / 'bin/python'),
+                str(self.skill.resolve() / 'scripts/slice_icons.py'), 'sheet.png', 'out',
+            ])
+            self.assertIn('Agent selects cutout from actual image edges', result.stdout)
         self.assertEqual(marker.read_text(), 'keep existing environment')
         self.assertFalse((self.caller / '.venv').exists())
         self.assertEqual(self.check_log.read_text().splitlines(), ['checked', 'checked'])

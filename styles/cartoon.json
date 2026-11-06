@@ -3,7 +3,7 @@
   "label": "卡通 / Cartoon",
   "preamble": "Playful sticker-style cartoon icons: thick rounded clean dark outlines, cute friendly shapes, flat colour fills with only subtle internal shading, vibrant soft palette. No drop shadow and no cast shadow.",
   "palette": null,
-  "cutout": "rembg",
+  "cutout": "floodfill",
   "thresh": null,
   "construction": {
     "grid": "consistent live area and padding; optical sizing",
@@ -19,5 +19,5 @@
     "motif": null
   },
   "fits": "Casual games, entertainment.",
-  "notes": "Soft outlines and internal shading — always rembg cutout."
+  "notes": "Start with colour-key cutout for clean outlined flat art. Inspect the actual generated edges: use rembg only when soft or inseparable boundaries need it, and compare against the colour candidate for lost details."
 }
