@@ -60,27 +60,125 @@ def estimate_background(rgb, grid=1):
     }
 
 
-def floodfill_alpha(rgb, thresh=24, bg=None, tolerance=2):
+def border_connected(mask):
+    seeds = np.zeros(mask.shape, dtype=bool)
+    seeds[[0, -1], :] = mask[[0, -1], :]
+    seeds[:, [0, -1]] = mask[:, [0, -1]]
+    return ndimage.binary_propagation(seeds, mask=mask)
+
+
+def floodfill_alpha(rgb, thresh=24, bg=None, tolerance=2, background_tolerance=None):
     """Remove measured background, preserving merely similar interior colours.
 
-    Only tightly matching pixels are removed. Border-connected noise can use
-    the measured tolerance; enclosed regions require an almost exact match.
+    Border-connected noise uses the measured or explicitly reviewed tolerance;
+    enclosed regions require an almost exact match.
     Exact backdrop-coloured subject details cannot be distinguished from holes
     by colour alone, so QA reports every substantial enclosed transparent area.
-    `thresh` caps tolerance; it is no longer a global transparent-colour range.
+    An explicit background_tolerance controls only border-connected removal;
+    it does not widen enclosed erasure or change the measured background noise.
     """
     if bg is None:
         background = estimate_background(rgb)
         bg, tolerance = background['rgb'], background['tolerance']
-    tolerance = min(tolerance, thresh)
     diff = colour_distance(rgb, bg)
-    matching = diff <= tolerance
-    seeds = np.zeros(matching.shape, dtype=bool)
-    seeds[[0, -1], :] = matching[[0, -1], :]
-    seeds[:, [0, -1]] = matching[:, [0, -1]]
-    exterior = ndimage.binary_propagation(seeds, mask=matching)
-    exact_holes = diff <= min(1, tolerance)
+    exterior_tolerance = tolerance if background_tolerance is None else background_tolerance
+    exterior = border_connected(diff <= exterior_tolerance)
+    # A deliberately narrow exterior threshold must not turn retained backdrop
+    # noise or near-grey accents into "holes". Use the measured noise envelope
+    # to identify outside regions, without erasing them at that wider tolerance.
+    outside = exterior if exterior_tolerance >= tolerance else border_connected(diff <= tolerance)
+    exact_holes = (diff <= min(1, tolerance)) & ~outside
     return np.where(exterior | exact_holes, 0, 255).astype(np.uint8)
+
+
+def cell_geometry(index, width, height, grid):
+    row, column = divmod(index, grid)
+    x0, x1 = column * width // grid, (column + 1) * width // grid
+    y0, y1 = row * height // grid, (row + 1) * height // grid
+    pad = int(0.06 * min(x1 - x0, y1 - y0))
+    left, top = max(0, x0 - pad), max(0, y0 - pad)
+    right, bottom = min(width, x1 + pad), min(height, y1 + pad)
+    return (left, top, right, bottom), (x0 - left, y0 - top, x1 - left, y1 - top)
+
+
+def load_repairs(path, image, grid, count, bg):
+    """Validate agent-reviewed per-cell overrides before exporting anything.
+
+    Seeds and half-open bounds use the expanded source-cell coordinates from
+    QA, and must stay inside that cell's owned_bounds. Never alter neighbours.
+    """
+    if path is None:
+        return {}
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f'duplicate repair key: {key!r}')
+            result[key] = value
+        return result
+
+    document = json.loads(Path(path).read_text(), object_pairs_hook=unique_keys)
+    if not isinstance(document, dict) or set(document) != {'cells'} or not isinstance(document['cells'], dict):
+        raise ValueError('repairs must contain only a "cells" object keyed by 1-based cell numbers')
+
+    def integer(value, low, high):
+        return type(value) is int and low <= value <= high
+
+    repairs = {}
+    for key, settings in document['cells'].items():
+        if not key.isdecimal() or not 1 <= int(key) <= count or key != str(int(key)):
+            raise ValueError(f'invalid repair cell: {key!r}')
+        cell = int(key)
+        if not isinstance(settings, dict) or set(settings) - {'mode', 'background_tolerance', 'erase_regions'}:
+            raise ValueError(f'cell {cell}: unsupported repair settings')
+        if 'mode' in settings and settings['mode'] not in ('floodfill', 'rembg'):
+            raise ValueError(f'cell {cell}: mode must be floodfill or rembg')
+        if 'background_tolerance' in settings and not integer(settings['background_tolerance'], 0, 255):
+            raise ValueError(f'cell {cell}: background_tolerance must be an integer from 0 to 255')
+        erasures = settings.get('erase_regions', [])
+        if not isinstance(erasures, list):
+            raise ValueError(f'cell {cell}: erase_regions must be a list')
+        crop, owned = cell_geometry(cell - 1, *image.size, grid)
+        rgb = np.asarray(image.crop(crop))
+        for region in erasures:
+            if not isinstance(region, dict) or set(region) != {'seed', 'bounds', 'tolerance'}:
+                raise ValueError(f'cell {cell}: each erase region needs seed, bounds and tolerance')
+            seed, bounds, tolerance = region['seed'], region['bounds'], region['tolerance']
+            if (not isinstance(seed, list) or len(seed) != 2
+                    or not isinstance(bounds, list) or len(bounds) != 4
+                    or not all(type(value) is int for value in seed + bounds)
+                    or not integer(tolerance, 0, 255)):
+                raise ValueError(f'cell {cell}: invalid erase region coordinates or tolerance')
+            x, y = seed
+            left, top, right, bottom = bounds
+            if not (owned[0] <= left <= x < right <= owned[2]
+                    and owned[1] <= top <= y < bottom <= owned[3]):
+                raise ValueError(f'cell {cell}: erase seed and bounds must be inside owned_bounds')
+            if np.max(np.abs(rgb[y, x].astype(float) - bg)) > tolerance:
+                raise ValueError(f'cell {cell}: erase seed does not match the background at this tolerance')
+        repairs[cell] = settings
+    return repairs
+
+
+def erase_background_regions(rgb, alpha, bg, erasures):
+    """Erase only the selected background-coloured region inside each rectangle."""
+    result = alpha.copy()
+    if not erasures:
+        return result, []
+    distance = colour_distance(rgb, bg)
+    applied = []
+    for region in erasures:
+        x, y = region['seed']
+        left, top, right, bottom = region['bounds']
+        allowed = np.zeros(alpha.shape, dtype=bool)
+        allowed[top:bottom, left:right] = distance[top:bottom, left:right] <= region['tolerance']
+        seed = np.zeros(alpha.shape, dtype=bool)
+        seed[y, x] = True
+        erased = ndimage.binary_propagation(seed, mask=allowed)
+        pixels = int(np.count_nonzero(erased & (result > 0)))
+        result[erased] = 0
+        applied.append({**region, 'removed_pixels': pixels})
+    return result, applied
 
 
 def refine_edges(rgb, alpha, bg, thresh=24, tolerance=2, infer_alpha=True):
@@ -207,6 +305,11 @@ def inspect_cell(rgb, cutout_rgb, before, after, bounds, background, thresh):
             'Foreground-coloured source pixels are nearly transparent after cutout; inspect for lost details.',
             missing,
         )
+    else:
+        findings.append({
+            'code': 'uncertain_background',
+            'message': 'Background sampling is unreliable; compare this cell with its source. Colour-based loss detection is unavailable.',
+        })
 
     rim = owned & ~ndimage.binary_erosion(owned)
     flag('cell_boundary', 'Foreground reaches a cell boundary; check clipping or neighbour bleed.', visible & rim)
@@ -266,11 +369,15 @@ def main():
     ap.add_argument('--mode', choices=['floodfill', 'rembg'], default='floodfill')
     ap.add_argument('--grid', type=int, default=4)
     ap.add_argument('--thresh', type=int, default=24, help='colour contrast guard for edge matting and QA, not a global erase threshold')
+    ap.add_argument('--background-tolerance', type=int, default=None, help='override only border-connected background removal, from 0 to 255')
+    ap.add_argument('--repairs', type=Path, help='agent-reviewed per-cell modes, tolerances and bounded background erasures (JSON)')
     ap.add_argument('--size', type=int, default=512)
     ap.add_argument('--count', type=int, default=None, help='real icons in row-major order; remaining cells are intentional blanks')
     a = ap.parse_args()
     if a.grid < 1 or a.size < 1 or not 1 <= a.thresh <= 255:
         ap.error('--grid and --size must be positive; --thresh must be between 1 and 255')
+    if a.background_tolerance is not None and not 0 <= a.background_tolerance <= 255:
+        ap.error('--background-tolerance must be between 0 and 255')
     total_cells = a.grid * a.grid
     if a.count is not None and not 1 <= a.count <= total_cells:
         ap.error(f'--count must be between 1 and {total_cells}')
@@ -280,40 +387,62 @@ def main():
     if a.grid > min(w, h):
         ap.error('--grid cannot exceed the image dimensions')
     background = estimate_background(np.asarray(im), a.grid)
-    mode = a.mode
+    count = a.count or total_cells
+    try:
+        repairs = load_repairs(a.repairs, im, a.grid, count, background['rgb'])
+    except (OSError, ValueError) as error:
+        ap.error(str(error))
+    default_mode = a.mode
     warnings = []
     if not background['confident']:
         warnings.append('Background estimate is uncertain; inspect source and previews. Colour-based QA is limited.')
-        if mode == 'floodfill':
-            mode = 'rembg'
-            warnings.append('Used rembg because no reliable flat backdrop could be measured.')
-    session = create_rembg_session() if mode == 'rembg' else None
+        if default_mode == 'floodfill':
+            default_mode = 'rembg'
+    modes = [repairs.get(i + 1, {}).get('mode', default_mode) for i in range(count)]
+    mode = modes[0] if len(set(modes)) == 1 else 'mixed'
+    uses_rembg = 'rembg' in modes
+    if uses_rembg:
+        warnings.append('rembg can remove subject details; compare each affected cell with its source and saved colour candidate.')
+    session = create_rembg_session() if uses_rembg else None
     outdir = Path(a.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     qa_dir = outdir / 'qa'
     qa_dir.mkdir(exist_ok=True)
-    reports, sources, cutouts, cleaned_images, outputs = [], [], [], [], []
-    for index in range(a.count or total_cells):
-        r, c = divmod(index, a.grid)
-        x0, x1 = c * w // a.grid, (c + 1) * w // a.grid
-        y0, y1 = r * h // a.grid, (r + 1) * h // a.grid
-        pad = int(0.06 * min(x1 - x0, y1 - y0))
-        px0, py0 = max(0, x0 - pad), max(0, y0 - pad)
-        px1, py1 = min(w, x1 + pad), min(h, y1 + pad)
-        bounds = (x0 - px0, y0 - py0, x1 - px0, y1 - py0)
-        cell = im.crop((px0, py0, px1, py1))
+    if uses_rembg:
+        (qa_dir / 'colour-candidates').mkdir(exist_ok=True)
+    reports, sources, cutouts, cleaned_images, outputs, colour_candidates = [], [], [], [], [], []
+    for index in range(count):
+        crop, bounds = cell_geometry(index, w, h, a.grid)
+        cell = im.crop(crop)
         rgb = np.asarray(cell)
-        if mode == 'floodfill':
-            alpha = floodfill_alpha(rgb, a.thresh, background['rgb'], background['tolerance'])
-            cutout_rgb = rgb
+        settings = repairs.get(index + 1, {})
+        cell_mode = modes[index]
+        exterior_tolerance = settings.get('background_tolerance', a.background_tolerance)
+        if exterior_tolerance is None:
+            exterior_tolerance = background['tolerance']
+        erasures = settings.get('erase_regions', [])
+        colour_alpha = floodfill_alpha(
+            rgb, a.thresh, background['rgb'], background['tolerance'], exterior_tolerance,
+        )
+        colour_rgb = rgb
+        if background['confident']:
+            colour_rgb, colour_alpha = refine_edges(
+                rgb, colour_alpha, background['rgb'], a.thresh, background['tolerance'],
+            )
+        # Finish edge inference first: a newly erased hole must not cause
+        # neighbouring opaque artwork to be reinterpreted as a blended edge.
+        colour_alpha, colour_repairs = erase_background_regions(rgb, colour_alpha, background['rgb'], erasures)
+        if cell_mode == 'floodfill':
+            cutout_rgb, alpha, applied_repairs = colour_rgb, colour_alpha, colour_repairs
         else:
             from rembg import remove
             result = np.asarray(remove(cell, session=session).convert('RGBA'))
             cutout_rgb, alpha = result[:, :, :3], result[:, :, 3]
-        if background['confident']:
-            cutout_rgb, alpha = refine_edges(
-                cutout_rgb, alpha, background['rgb'], a.thresh, background['tolerance'], infer_alpha=mode == 'floodfill'
-            )
+            if background['confident']:
+                cutout_rgb, alpha = refine_edges(
+                    cutout_rgb, alpha, background['rgb'], a.thresh, background['tolerance'], infer_alpha=False,
+                )
+            alpha, applied_repairs = erase_background_regions(rgb, alpha, background['rgb'], erasures)
         cleaned = clean(alpha, bounds)
         if cleaned is None:
             cleaned = np.zeros_like(alpha)
@@ -322,13 +451,35 @@ def main():
         output = normalise(rgba, a.size)
         filename = f'{index + 1:02d}.png'
         output.save(outdir / filename)
-        report.update({'file': filename, 'cell': index + 1, 'source_bounds': [px0, py0, px1, py1], 'owned_bounds': list(bounds)})
+        report.update({
+            'file': filename, 'cell': index + 1, 'source_bounds': list(crop), 'owned_bounds': list(bounds),
+            'mode': cell_mode, 'background_tolerance': exterior_tolerance, 'applied_repairs': applied_repairs,
+        })
+        if cell_mode == 'rembg':
+            colour_cleaned = clean(colour_alpha, bounds)
+            if colour_cleaned is None:
+                colour_cleaned = np.zeros_like(colour_alpha)
+            candidate = Image.fromarray(np.dstack((colour_rgb, colour_cleaned)))
+            candidate_path = Path('qa') / 'colour-candidates' / filename
+            candidate.save(outdir / candidate_path)
+            report['colour_candidate'] = str(candidate_path)
+            disagreement = (colour_cleaned > 32) & (cleaned <= 32) & cell_mask(cleaned.shape, bounds)
+            objects = regions(disagreement, minimum=3)
+            if objects:
+                report['findings'].append({
+                    'code': 'candidate_disagreement',
+                    'message': 'Colour candidate retains pixels removed by rembg; compare with source for lost detail or residual background.',
+                    'pixels': sum(obj['area'] for obj in objects),
+                    'region_count': len(objects), 'regions': objects[:50],
+                })
+        else:
+            candidate = rgba
         reports.append(report)
         sources.append(cell)
         cutouts.append(Image.fromarray(np.dstack((cutout_rgb, alpha))))
         cleaned_images.append(rgba)
         outputs.append(output)
-
+        colour_candidates.append(candidate)
     for name, images, colour in (
         ('source', sources, background['hex']),
         ('cutout', cutouts, '#ff00ff'),
@@ -338,6 +489,14 @@ def main():
         ('dark', outputs, '#202020'),
     ):
         save_preview(images, qa_dir / f'{name}.png', a.grid, colour, reports)
+    if uses_rembg:
+        save_preview(colour_candidates, qa_dir / 'colour-candidate.png', a.grid, '#ff00ff', reports)
+    else:
+        (qa_dir / 'colour-candidate.png').unlink(missing_ok=True)
+    active_candidates = {entry['file'] for entry in reports if 'colour_candidate' in entry}
+    for stale in (qa_dir / 'colour-candidates').glob('*.png'):
+        if stale.stem.isdecimal() and stale.name not in active_candidates:
+            stale.unlink()
     review = [entry['cell'] for entry in reports if entry['findings']]
     report = {
         'sheet': str(Path(a.sheet).resolve()), 'requested_mode': a.mode, 'effective_mode': mode,
