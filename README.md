@@ -119,6 +119,74 @@ npx skills add exokworks/oil-icon
 
 </details>
 
+## 配置、依赖与使用边界
+
+### 安装与切图
+
+准备 **Python 3.12 或 3.13**（推荐 3.12），将下方路径替换为实际位置。依赖一次装齐，无需选择安装模式或手动激活环境。
+
+```bash
+SKILL_DIR="/absolute/path/to/oil-icon"  # SKILL.md 所在目录
+
+bash "$SKILL_DIR/scripts/setup.sh" && \
+  "$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/slice_icons.py" \
+  "/absolute/task/raw/icons.png" "/absolute/task/out" --mode rembg
+```
+
+Agent 根据图标风格选择切图参数：
+
+| 场景 | 参数 |
+| --- | --- |
+| 3D、贴纸、照片等软边图标 | `--mode rembg` |
+| 扁平、硬边图标 | `--mode floodfill` |
+| 16 格（默认）／9 格 | `--grid 4`／`--grid 3` |
+
+首次安装需访问 Python 包索引和 GitHub，下载约 **176 MB** 的 U²-Net 模型。环境与模型分别保存在 Skill 的 `.venv`、`.venv/models`；图片和产物保存在任务目录。
+
+<details>
+<summary><strong>安装细节与故障处理</strong></summary>
+
+- **依赖**：统一安装 Pillow、NumPy、SciPy 和 `rembg[cpu]`，版本见 [requirements.txt](requirements.txt)。仅用二进制 wheel，并固定 CPU Runtime、Numba 和 LLVM 依赖，避免意外源码编译。
+- **Python**：优先复用有效 `.venv`；新建时依次查找 `python3.12`、`python3.13` 和兼容的 `python3`，不使用 3.14。也可用 `bash "$SKILL_DIR/scripts/setup.sh" --python /path/to/python3.12` 指定解释器。
+- **环境修复**：已有 `.venv` 不兼容或失效时，先重命名备份再重跑，脚本不会自动清空目录。安装中断或模型下载失败时，解决报错或网络问题后重跑即可。
+- **就绪检查**：安装显示进度与失败阶段，只有通过 `pip check`、依赖导入、模型加载和真实 CPU 推理后才报告就绪；重复运行会补齐并重新验证。
+- **已有配置**：保留镜像、代理及 `U2NET_HOME`／`REMBG_HOME` 缓存设置；覆盖 pip 用户级安装选项，拒绝 `target`、`prefix`、`root`，避免依赖装到 `.venv` 外。
+
+</details>
+
+### 检查与交付
+
+切图会检测实际背景色、保留本格内的独立小部件；背景采样不可靠时自动使用 rembg，并提示复核。输出目录的 `qa/` 包含：
+
+- **检测报告** `report.json`：提示疑似残灰、透明孔和部件损失。
+- **对照与预览**：原格、抠图后、清理后的对照图，以及洋红、浅色、深色底预览。
+
+Agent 必须对照原图逐张检查；正常镂空和灰色细节也可能被标记。`--thresh` 调整边缘对比度和 QA 灵敏度，并非按色差全局删除像素。
+
+**使用边界**：一次生成不保证整套一致性；16–24px 的小尺寸功能图标优先使用矢量库。
+
+## 外部图片 API
+
+优先使用 Agent 内置生图工具；没有内置工具时，使用已授权的外部 API。OpenAI Images 脚本从运行环境读取以下配置，**不要把 Key 发到聊天中**。
+
+| 环境变量 | 用途 |
+| --- | --- |
+| `OPENAI_API_KEY` | 必需，在可信运行环境中配置 |
+| `OPENAI_BASE_URL` | 可选，自定义 API 地址 |
+| `OPENAI_USER_AGENT` | 可选，自定义请求标识 |
+
+沿用上一节的 `SKILL_DIR`，运行：
+
+```bash
+python3 "$SKILL_DIR/scripts/gen_image.py" \
+  --prompt "图标设计要求" \
+  --out "/absolute/task/raw/icons.png"
+```
+
+- **自动选型**：默认 `gpt-image-2.6-sunburst`，由 Agent 按任务决定，通常无需用户指定。
+- **自动回退**：2.6 返回 HTTP `400`、`403`、`404` 或 `422` 时，改用 `gpt-image-2.5-sunburst` 重试一次。
+- **停止重试**：遇到 `401`、`429`、超时、服务端错误或异常响应时停止，避免重复生成或计费。
+
 <p align="center">
   <a href="https://github.com/oil-oil/beautify-github-readme"><img src="./assets/readme/made-with-beautify.svg" width="300" alt="README made with beautify-github-readme"></a>
 </p>
@@ -126,40 +194,3 @@ npx skills add exokworks/oil-icon
 ## License
 
 MIT
-
-## 配置、依赖与使用边界
-
-生图依赖已授权的图片工具，无需把 Key 发到聊天。切图环境统一安装 Pillow、NumPy、SciPy 和 `rembg[cpu]`，用户无需选择安装模式。依赖版本见 [requirements.txt](requirements.txt)。
-
-准备 **Python 3.12 或 3.13**（推荐已实测的 3.12）。将 `SKILL.md` 所在目录的绝对路径记为 `SKILL_DIR`，在任意工作目录运行：
-
-```bash
-bash "$SKILL_DIR/scripts/setup.sh" && \
-"$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/slice_icons.py" "/absolute/task/raw/icons.png" "/absolute/task/out" --mode rembg
-```
-
-脚本优先复用有效的 `.venv`；新建时依次查找 `python3.12`、`python3.13` 和版本兼容的 `python3`，不使用 Python 3.14。若解释器不在 PATH，可运行 `bash "$SKILL_DIR/scripts/setup.sh" --python /path/to/python3.12`。已有环境不兼容或失效时会明确报错，先将 `.venv` 重命名备份再重跑；脚本不会自动清空已有目录。
-
-安装仅使用二进制 wheel，固定 CPU Runtime、Numba 和 LLVM 依赖，避免 Intel Mac 意外进入源码编译。全程显示安装进度与失败阶段；完成 `pip check`、图像依赖导入、U²-Net 模型加载和真实 CPU 推理后才报告就绪。可重复运行同一命令补齐安装并重新验证，无需手动激活环境或调用裸 `pip`。脚本覆盖 pip 的用户级安装选项；若配置了 `target`、`prefix` 或 `root` 安装位置，则在安装前报错，避免依赖写入 `.venv` 之外，同时保留镜像、代理等网络配置。
-
-首次安装需要访问 Python 包索引和 GitHub 下载 U²-Net 模型（约 176 MB）。模型默认缓存在 Skill 的 `.venv/models`，安装和切图自动共用，无需额外配置；已有 `U2NET_HOME` 或 `REMBG_HOME` 则沿用该位置。模型下载失败时修复网络后重跑安装命令。任务图片与输出路径按实际工作目录指定；扁平风格使用 `--mode floodfill`，软边 / 3D / 照片使用 `--mode rembg`。
-
-切图会自动检测实际背景色，保留本格内的独立小部件；采样不可靠时自动使用 rembg 并提示复核。默认在输出目录的 `qa/` 中生成 `report.json`、原格 / 抠图后 / 清理后的对照图，以及洋红、白、深色底的最终预览。报告会提示疑似残灰、透明孔和部件损失；请结合原图逐张确认，正常镂空和灰色细节也可能被标记。`--thresh` 用于边缘对比度和 QA 灵敏度，不再把一定色差内的所有像素直接删除。
-
-产物保存在任务目录。9 格使用 --grid 3，16 格使用 --grid 4；小尺寸功能图标优先矢量库。一次生成不保证一致性。
-
-使用示例：
-
-```text
-用 oil-icon 为这六个功能画一组配套图标。
-```
-
-## 外部图片 API
-
-Agent 没有内置生图工具时，可使用已授权的外部服务。OpenAI Images 脚本直接读取 `OPENAI_API_KEY`（可选 `OPENAI_BASE_URL` 和 `OPENAI_USER_AGENT`），不提供本机凭据管理；缺少 Key 时先在可信运行环境中配置，不要发送到聊天。将 `SKILL.md` 所在目录记为 `SKILL_DIR`，然后运行：
-
-```bash
-python3 "$SKILL_DIR/scripts/gen_image.py" --prompt "图标设计要求" --out "/path/to/icons.png"
-```
-
-脚本默认使用 `gpt-image-2.6-sunburst`，agent 会根据任务需要选型，无需用户日常指定。遇到明确的 HTTP 请求拒绝（400、403、404、422）时，会自动改用 `gpt-image-2.5-sunburst` 重试一次；超时、限流（429）、鉴权失败（401）、服务端错误和响应异常不会自动重试，以免重复生成或重复计费。
