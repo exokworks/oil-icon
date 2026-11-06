@@ -161,3 +161,5 @@ Agent 没有内置生图工具时，可使用已授权的外部服务。OpenAI I
 ```bash
 python3 "$SKILL_DIR/scripts/gen_image.py" --prompt "图标设计要求" --out "/path/to/icons.png"
 ```
+
+脚本默认使用 `gpt-image-2.6-sunburst`，agent 会根据任务需要选型，无需用户日常指定。遇到明确的 HTTP 请求拒绝（400、403、404、422）时，会自动改用 `gpt-image-2.5-sunburst` 重试一次；超时、限流（429）、鉴权失败（401）、服务端错误和响应异常不会自动重试，以免重复生成或重复计费。

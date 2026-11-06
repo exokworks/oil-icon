@@ -9,7 +9,7 @@ import unittest
 from threading import Thread
 from pathlib import Path
 from unittest.mock import patch
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 spec=importlib.util.spec_from_file_location('icons',Path(__file__).parents[1]/'scripts/gen_image.py')
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class GenImageTests(unittest.TestCase):
@@ -68,8 +68,103 @@ class GenImageTests(unittest.TestCase):
         self.assertEqual(requests, [
             ('/proxy/v1/images/generations', 'Bearer TEST_ONLY_ICON',
              'Mozilla/5.0 (compatible; oil-icon/1.0)',
-             {'model': 'gpt-image-1', 'prompt': 'test', 'size': '1024x1024', 'n': 1}),
+             {'model': 'gpt-image-2.6-sunburst', 'prompt': 'test', 'size': '1024x1024', 'n': 1}),
             ('/proxy/v1/images/generations', 'Bearer TEST_ONLY_ICON',
              'Custom-Image-Client/1.0',
-             {'model': 'gpt-image-1', 'prompt': 'test', 'size': '1024x1024', 'n': 1}),
+             {'model': 'gpt-image-2.6-sunburst', 'prompt': 'test', 'size': '1024x1024', 'n': 1}),
         ])
+
+    def test_2_6_rejection_retries_2_5_sunburst_without_leaking_response(self):
+        error = module.urllib.error.HTTPError(
+            'https://example.invalid', 400, 'Bad Request', {}, io.BytesIO(b'secret response detail')
+        )
+        requests = []
+
+        def response(request, **kwargs):
+            requests.append(json.loads(request.data))
+            if len(requests) == 1:
+                raise error
+            return io.BytesIO(json.dumps({'data': [{'b64_json': 'dGVzdA=='}]}).encode())
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                patch.object(sys, 'argv', ['gen_image', '--prompt', 'test', '--out', str(Path(directory) / 'out.png')]), \
+                patch.object(module.urllib.request, 'urlopen', side_effect=response), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as notice:
+            module.main()
+            self.assertEqual([request['model'] for request in requests], [
+                'gpt-image-2.6-sunburst', 'gpt-image-2.5-sunburst'
+            ])
+            self.assertEqual((Path(directory) / 'out.png').read_bytes(), b'test')
+            self.assertIn('used fallback gpt-image-2.5-sunburst', notice.getvalue())
+            self.assertNotIn('secret response detail', notice.getvalue())
+            self.assertNotIn('TEST_ONLY_ICON', notice.getvalue())
+
+    def test_flare_rejection_automatically_uses_2_5_sunburst(self):
+        error = module.urllib.error.HTTPError('https://example.invalid', 404, 'Not Found', {}, io.BytesIO())
+        requests = []
+
+        def response(request, **kwargs):
+            requests.append(json.loads(request.data)['model'])
+            if len(requests) == 1:
+                raise error
+            return io.BytesIO(json.dumps({'data': [{'b64_json': 'aWNvbg=='}]}).encode())
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                patch.object(sys, 'argv', ['gen_image', '--prompt', 'test', '--out', str(Path(directory) / 'out.png'), '--model', 'gpt-image-2.6-flare']), \
+                patch.object(module.urllib.request, 'urlopen', side_effect=response), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            module.main()
+            self.assertEqual(requests, ['gpt-image-2.6-flare', 'gpt-image-2.5-sunburst'])
+            self.assertEqual((Path(directory) / 'out.png').read_bytes(), b'icon')
+
+    def test_403_rejection_automatically_uses_2_5_sunburst(self):
+        error = module.urllib.error.HTTPError('https://example.invalid', 403, 'Forbidden', {}, io.BytesIO())
+        requests = []
+
+        def response(request, **kwargs):
+            requests.append(json.loads(request.data)['model'])
+            if len(requests) == 1:
+                raise error
+            return io.BytesIO(json.dumps({'data': [{'b64_json': 'aWNvbg=='}]}).encode())
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                patch.object(sys, 'argv', ['gen_image', '--prompt', 'test', '--out', str(Path(directory) / 'out.png')]), \
+                patch.object(module.urllib.request, 'urlopen', side_effect=response), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            module.main()
+            self.assertEqual(requests, ['gpt-image-2.6-sunburst', 'gpt-image-2.5-sunburst'])
+            self.assertEqual((Path(directory) / 'out.png').read_bytes(), b'icon')
+
+    def test_2_6_failure_with_explicit_base_name_notes_valid_api_ids(self):
+        self.assertTrue(module.uses_2_6('gpt-image-2.6'))
+        self.assertTrue(module.uses_2_6('gpt-image-2.6-flare'))
+        self.assertTrue(module.uses_2_6('gpt-image-2.6-sunburst'))
+
+    def test_non_2_6_failure_does_not_suggest_unrequested_fallback(self):
+        self.assertFalse(module.uses_2_6('custom-image-model'))
+
+    def test_timeout_does_not_retry_to_avoid_duplicate_generation(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                patch.object(sys, 'argv', ['gen_image', '--prompt', 'test', '--out', str(Path(directory) / 'out.png')]), \
+                patch.object(module.urllib.request, 'urlopen', side_effect=TimeoutError), \
+                redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as failure:
+            module.main()
+        self.assertIn('Automatic fallback to gpt-image-2.5-sunburst was skipped', str(failure.exception))
+        self.assertFalse((Path(directory) / 'out.png').exists())
+
+    def test_failed_automatic_fallback_reports_both_statuses(self):
+        first_error = module.urllib.error.HTTPError('https://example.invalid', 404, 'Not Found', {}, io.BytesIO())
+        second_error = module.urllib.error.HTTPError('https://example.invalid', 422, 'Unprocessable', {}, io.BytesIO())
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                patch.object(sys, 'argv', ['gen_image', '--prompt', 'test', '--out', str(Path(directory) / 'out.png')]), \
+                patch.object(module.urllib.request, 'urlopen', side_effect=[first_error, second_error]), \
+                redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as failure:
+            module.main()
+        self.assertIn('gpt-image-2.6-sunburst (HTTP 404)', str(failure.exception))
+        self.assertIn('gpt-image-2.5-sunburst also failed (HTTP 422)', str(failure.exception))
+        self.assertFalse((Path(directory) / 'out.png').exists())
