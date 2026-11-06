@@ -192,8 +192,25 @@ class AutomaticQATests(unittest.TestCase):
         after = module.clean(before, (10, 10, 70, 70))
         report = module.inspect_cell(rgb, rgb, before, after, (10, 10, 70, 70), module.estimate_background(rgb), 24)
         codes = {finding['code'] for finding in report['findings']}
-        self.assertTrue({'transparent_holes', 'background_like_foreground', 'removed_components'} <= codes)
+        self.assertTrue({'transparent_holes', 'background_like_foreground', 'removed_padding'} <= codes)
         self.assertEqual(report['removed_pixels'], 30)
+
+    def test_padding_cleanup_is_info_but_whole_crossing_region_stays_under_review(self):
+        rgb = np.full((80, 80, 3), (136, 136, 135), dtype=np.uint8)
+        rgb[24:56, 24:56] = (240, 210, 160)
+        rgb[1:5, 24:56] = (30, 190, 60)  # wholly outside
+        rgb[30:38, 0:10] = (30, 190, 60)  # crosses the owned boundary
+        bounds = (8, 8, 72, 72)
+        before = module.floodfill_alpha(rgb)
+        after = module.clean(before, bounds)
+        report = module.inspect_cell(rgb, rgb, before, after, bounds, module.estimate_background(rgb), 24)
+        findings = {finding['code']: finding for finding in report['findings']}
+        self.assertEqual(findings['removed_padding']['severity'], 'info')
+        self.assertEqual(findings['removed_padding']['pixels'], 128)
+        self.assertEqual(findings['removed_components']['severity'], 'review')
+        self.assertEqual(findings['removed_components']['pixels'], 80)
+        self.assertEqual(findings['removed_components']['regions'][0]['bbox'], [0, 30, 10, 38])
+        self.assertEqual(report['removed_pixels'], 208)
 
     def test_reports_components_lost_by_rembg_before_cleanup(self):
         rgb = np.full((128, 128, 3), (136, 136, 135), dtype=np.uint8)

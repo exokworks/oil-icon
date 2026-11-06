@@ -5,12 +5,13 @@ Used when the current agent has no callable image-generation tool and OpenAI
 Images is the authorized external provider. For other APIs (Replicate, Fal,
 Stability, …), call the selected provider directly instead.
 
-  gen_image.py --prompt "<full sheet prompt>" --out raw/<style>.png
+  gen_image.py --prompt-file prompt.txt --out raw/<style>.png
 
 Reads OPENAI_API_KEY plus optional OPENAI_BASE_URL and OPENAI_USER_AGENT
 from the environment. No third-party deps (stdlib only).
 """
 import argparse, base64, binascii, json, os, sys, urllib.error, urllib.request
+from pathlib import Path
 
 
 DEFAULT_MODEL = "gpt-image-2.6-sunburst"
@@ -62,11 +63,30 @@ def generate_image(model, prompt, size, base_url, key, user_agent):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--prompt", required=True)
+    prompts = ap.add_mutually_exclusive_group(required=True)
+    prompts.add_argument("--prompt", help="inline prompt text")
+    prompts.add_argument("--prompt-file", type=Path, help="read the full prompt from a UTF-8 file")
     ap.add_argument("--out", required=True)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--size", default="1024x1024")
     a = ap.parse_args()
+
+    prompt = a.prompt
+    if a.prompt_file is not None:
+        try:
+            prompt = a.prompt_file.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError):
+            ap.error("--prompt-file must be a readable UTF-8 text file")
+        try:
+            if a.prompt_file.samefile(a.out):
+                ap.error("--out must not refer to the --prompt-file input")
+        except FileNotFoundError:
+            # A new output file does not have a filesystem identity yet.
+            pass
+        except OSError:
+            ap.error("cannot verify that --out is separate from --prompt-file")
+    if not prompt.strip():
+        ap.error("prompt must not be empty or whitespace-only")
 
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
@@ -75,7 +95,7 @@ def main():
     user_agent = os.environ.get("OPENAI_USER_AGENT") or "Mozilla/5.0 (compatible; oil-icon/1.0)"
 
     try:
-        image = generate_image(a.model, a.prompt, a.size, base_url, key, user_agent)
+        image = generate_image(a.model, prompt, a.size, base_url, key, user_agent)
     except REQUEST_ERRORS as error:
         if (
             uses_2_6(a.model)
@@ -85,7 +105,7 @@ def main():
             first_reason = error_reason(error)
             error.close()
             try:
-                image = generate_image(FALLBACK_MODEL, a.prompt, a.size, base_url, key, user_agent)
+                image = generate_image(FALLBACK_MODEL, prompt, a.size, base_url, key, user_agent)
             except REQUEST_ERRORS as fallback_error:
                 fallback_reason = error_reason(fallback_error)
                 if isinstance(fallback_error, urllib.error.HTTPError):

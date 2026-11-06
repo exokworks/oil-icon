@@ -13,6 +13,106 @@ from contextlib import redirect_stdout, redirect_stderr
 spec=importlib.util.spec_from_file_location('icons',Path(__file__).parents[1]/'scripts/gen_image.py')
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class GenImageTests(unittest.TestCase):
+    def test_long_utf8_file_prompt_reaches_both_requests_unchanged(self):
+        prompt = '  一套图标，保留中文和换行。\n' + ('细节：耳机、叶片、星星；不要文字。\n' * 400) + '\n'
+        requests = []
+
+        def response(request, **kwargs):
+            requests.append(json.loads(request.data))
+            if len(requests) == 1:
+                raise module.urllib.error.HTTPError(
+                    'https://example.invalid', 403, 'Forbidden', {}, io.BytesIO())
+            return io.BytesIO(json.dumps({'data': [{'b64_json': 'aWNvbg=='}]}).encode())
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'long prompt.txt'
+            source.write_text(prompt, encoding='utf-8-sig')
+            output = Path(directory) / 'out.png'
+            with patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                    patch.object(sys, 'argv', ['gen_image', '--prompt-file', str(source), '--out', str(output)]), \
+                    patch.object(module.urllib.request, 'urlopen', side_effect=response), \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                module.main()
+            self.assertEqual(output.read_bytes(), b'icon')
+            self.assertEqual([request['prompt'] for request in requests], [prompt, prompt])
+            self.assertEqual([request['model'] for request in requests], [module.DEFAULT_MODEL, module.FALLBACK_MODEL])
+            self.assertEqual(source.read_text(encoding='utf-8-sig'), prompt)
+
+    def test_prompt_output_aliases_fail_before_request_and_preserve_prompt(self):
+        for alias in ('same_path', 'symlink', 'hardlink', 'directory_symlink'):
+            with self.subTest(alias=alias), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / 'prompt.txt'
+                original = '完整提示词，必须保留以便复现。\n'.encode('utf-8')
+                source.write_bytes(original)
+                output = root / 'out.png'
+                if alias == 'same_path':
+                    output = source
+                elif alias == 'symlink':
+                    output.symlink_to(source)
+                elif alias == 'hardlink':
+                    output.hardlink_to(source)
+                else:
+                    link = root / 'linked-directory'
+                    link.symlink_to(root, target_is_directory=True)
+                    output = link / source.name
+                with patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                        patch.object(sys, 'argv', ['gen_image', '--prompt-file', str(source), '--out', str(output)]), \
+                        patch.object(module, 'generate_image', return_value=b'icon') as request, \
+                        redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error, \
+                        self.assertRaises(SystemExit) as failure:
+                    module.main()
+                self.assertEqual(failure.exception.code, 2)
+                self.assertIn('--out must not refer to the --prompt-file input', error.getvalue())
+                request.assert_not_called()
+                self.assertEqual(source.read_bytes(), original)
+                self.assertEqual(output.read_bytes(), original)
+
+    def test_prompt_file_allows_distinct_output_with_identical_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / 'prompt.txt', root / 'out.png'
+            prompt = '保留提示词，替换独立的输出文件。\n'
+            source.write_text(prompt, encoding='utf-8')
+            output.write_bytes(source.read_bytes())
+            with patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                    patch.object(sys, 'argv', ['gen_image', '--prompt-file', str(source), '--out', str(output)]), \
+                    patch.object(module, 'generate_image', return_value=b'icon') as request, \
+                    redirect_stdout(io.StringIO()):
+                module.main()
+            request.assert_called_once()
+            self.assertEqual(request.call_args.args[1], prompt)
+            self.assertEqual(source.read_text(encoding='utf-8'), prompt)
+            self.assertEqual(output.read_bytes(), b'icon')
+
+    def test_invalid_prompt_inputs_fail_before_request_and_preserve_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'prompt.txt'
+            source.write_text('提示词', encoding='utf-8')
+            empty = root / 'empty.txt'
+            empty.write_text(' \n\t', encoding='utf-8')
+            invalid = root / 'invalid.txt'
+            invalid.write_bytes(b'\xff\xfe')
+            output = root / 'out.png'
+            output.write_bytes(b'previous output')
+            cases = [
+                [], ['--prompt', ''], ['--prompt', ' \n\t'],
+                ['--prompt-file', str(empty)], ['--prompt-file', str(invalid)],
+                ['--prompt-file', str(root / 'missing.txt')], ['--prompt-file', str(root)],
+                ['--prompt', 'inline', '--prompt-file', str(source)],
+            ]
+            for args in cases:
+                with self.subTest(args=args), \
+                        patch.dict(os.environ, {'OPENAI_API_KEY': 'TEST_ONLY_ICON'}), \
+                        patch.object(sys, 'argv', ['gen_image', *args, '--out', str(output)]), \
+                        patch.object(module.urllib.request, 'urlopen') as request, \
+                        redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as failure:
+                    module.main()
+                self.assertEqual(failure.exception.code, 2)
+                request.assert_not_called()
+                self.assertEqual(output.read_bytes(), b'previous output')
+
     def test_environment_key_authorizes_image_request_without_printing_it(self):
         def response(request,**kwargs):
             self.assertEqual(request.get_header('Authorization'),'Bearer TEST_ONLY_ICON')

@@ -1,6 +1,6 @@
 # Composing a generation prompt
 
-A sheet prompt = **style preamble** + **construction** + **palette lock** + **icon list** + **composition**, in that order. Send it to your chosen image provider (see `references/image-providers.md`) to render one sheet on flat grey.
+A sheet prompt = **style preamble** + **construction** + **palette lock** + **icon list** + **composition**, in that order. Save the complete text as UTF-8 in `raw/<style>-prompt.txt` so it can be reproduced; the external script reads it with `--prompt-file`. Send it to your chosen image provider (see `references/image-providers.md`) to render one sheet on flat grey.
 
 ## Composition (fixed for every sheet, use verbatim)
 

@@ -37,8 +37,9 @@ class ReviewWorkflowTests(unittest.TestCase):
     def slice_existing(self, sheet, *extra, output=None):
         out = output if output is not None else self.root / 'out'
         argv = ['slice_icons', str(sheet), str(out), '--grid', '1', '--size', '128', *extra]
-        with patch.object(sys, 'argv', argv), contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(sys, 'argv', argv), contextlib.redirect_stdout(io.StringIO()) as console:
             module.main()
+        self.last_stdout = console.getvalue()
         return json.loads((out / 'qa/report.json').read_text())
 
     def review_file(self, report, status='accepted', decisions=None):
@@ -1346,6 +1347,50 @@ m.main()
         self.assertEqual(accepted['status'], 'accepted')
         # Omitting the record on a later run must never silently approve it.
         self.assertEqual(self.run_cli()['status'], 'needs_review')
+
+    def test_clean_sixteen_cell_sheet_has_pending_acceptance_without_alerts(self):
+        rgb = self.rgb.copy()
+        rgb[44:64, 44:64] = [240, 210, 160]
+        report = self.run_cli('--grid', '4', rgb=np.tile(rgb, (4, 4, 1)))
+        self.assertEqual(report['review_cells'], list(range(1, 17)))
+        self.assertEqual(report['automatic_review_cells'], [])
+        self.assertEqual({cell['automatic_status'] for cell in report['cells']}, {'clear'})
+        self.assertIn('awaiting_acceptance=16  automatic_flags=0  unresolved_flags=0', self.last_stdout)
+        summary = (self.root / 'out/qa/summary.md').read_text()
+        self.assertIn('Awaiting visual acceptance: 16', summary)
+        self.assertIn('Automatic review/error hints: 0 cells', summary)
+
+    def test_summary_prioritizes_defects_and_keeps_info_and_accepted_evidence(self):
+        rgb = np.full((256, 256, 3), self.bg, dtype=np.uint8)
+        for x, y in ((24, 24), (152, 24), (24, 152)):
+            rgb[y:y+80, x:x+80] = [240, 210, 160]
+        rgb[30:50, 130:134] = [30, 190, 60]  # cell 2 accent, padding for cell 1
+        rgb[180:190, 50:60] = self.bg  # cell 3 hole; cell 4 empty
+        first = self.run_cli('--grid', '2', rgb=rgb)
+        self.assertEqual(first['automatic_review_cells'], [3, 4])
+        self.assertEqual(first['cells'][0]['automatic_status'], 'info')
+        self.assertNotIn('removed_padding', self.last_stdout)
+        summary = (self.root / 'out/qa/summary.md').read_text()
+        rows = [line.split('|')[1].strip() for line in summary.splitlines() if line.startswith('| 0')]
+        self.assertEqual(rows, ['04', '03', '01', '02'])
+        details = json.loads((self.root / 'out/qa/details/01.json').read_text())
+        self.assertEqual(details['findings'][0]['code'], 'removed_padding')
+        self.assertEqual(details['findings'][0]['pixels'], 80)
+        path = self.root / 'review.json'
+        path.write_text(json.dumps({'cells': {'3': {
+            'fingerprint': first['cells'][2]['fingerprint'], 'status': 'accepted',
+            'reviewer': 'test reviewer', 'note': 'Compared hole with source and final PNG.',
+            'decisions': {'transparent_holes': 'valid_hole'},
+        }}}))
+        accepted = self.run_cli('--grid', '2', '--review-file', str(path), rgb=rgb)
+        self.assertEqual(accepted['automatic_review_cells'], [3, 4])
+        self.assertEqual(accepted['accepted_cells'], [3])
+        self.assertIn('automatic_flags=2  unresolved_flags=1', self.last_stdout)
+        self.assertNotIn('03.png [', self.last_stdout)
+        summary = (self.root / 'out/qa/summary.md').read_text()
+        rows = [line.split('|')[1].strip() for line in summary.splitlines() if line.startswith('| 0')]
+        self.assertEqual(rows, ['04', '01', '02', '03'])
+        self.assertIn('transparent_holes: valid_hole', summary)
 
     def test_invalid_and_duplicate_review_documents_preserve_existing_outputs(self):
         first = self.run_cli()

@@ -325,7 +325,15 @@ def inspect_cell(rgb, cutout_rgb, before, after, bounds, background, thresh, int
 
     if not after.any():
         findings.append({'code': 'empty', 'severity': 'error', 'message': 'No foreground remains in this cell.'})
-    flag('removed_components', 'Cleanup removed content; check against the source cell.', (before > 0) & (after == 0), 1)
+    removed = (before > 0) & (after == 0)
+    labels, _ = ndimage.label(removed, structure=CONNECTED)
+    # Only whole removed regions with no owned pixels are routine padding
+    # cleanup. Keep the entire region under review if any part crosses inward.
+    touches_owned = np.isin(labels, np.unique(labels[removed & owned]))
+    flag('removed_components', 'Cleanup removed content overlapping this cell; check against the source.',
+         removed & touches_owned, 1)
+    flag('removed_padding', 'Cleanup removed fragments wholly outside this cell; retained as evidence.',
+         removed & ~touches_owned, 1, severity='info')
     visible = after > 32
     holes = ndimage.binary_fill_holes(visible) & ~visible
     flag('transparent_holes', 'Enclosed transparency may be a valid hole or lost subject detail.', holes & owned & ~intentional)
@@ -368,7 +376,7 @@ def inspect_cell(rgb, cutout_rgb, before, after, bounds, background, thresh, int
 
 
 FINDING_CODES = {
-    'empty', 'removed_components', 'transparent_holes', 'background_like_foreground',
+    'empty', 'removed_components', 'removed_padding', 'transparent_holes', 'background_like_foreground',
     'possible_cutout_loss', 'uncertain_background', 'cell_boundary',
     'candidate_disagreement', 'repaired_background', 'edge_ambiguity',
 }
@@ -462,10 +470,20 @@ def save_qa_report(qa_dir, report):
                  for i, entry in enumerate(compact['cells']))
     lines.extend(['  ]', '}'])
     (qa_dir / 'report.json').write_text('\n'.join(lines) + '\n')
+    automatic = report['automatic_review_cells']
+    unresolved = set(automatic) & set(report['review_cells'])
     summary = ['# Cutout QA', '', f'Status: **{report["status"]}** · accepted {len(report["accepted_cells"])}/{report["exported"]}',
-               '', 'Automatic hints are evidence, not visual acceptance. Full regions: `details/NN.json`.', '',
+               f'Awaiting visual acceptance: {len(report["review_cells"])} · needs fix: {len(report["needs_fix_cells"])}',
+               f'Automatic review/error hints: {len(automatic)} cells · unresolved: {len(unresolved)} cells',
+               '', 'Pending acceptance does not mean a detected defect. Automatic hints remain evidence after acceptance. Full regions: `details/NN.json`.', '',
                '| Cell | Review | Automatic | Findings / decisions |', '| --- | --- | --- | --- |']
-    for entry in compact['cells']:
+    def priority(entry):
+        state = entry['review']['status']
+        return (0 if state == 'needs_fix' else 2 if state == 'accepted' else 1,
+                {'error': 0, 'review': 1, 'info': 2, 'clear': 3}[entry['automatic_status']],
+                state != 'stale', entry['cell'])
+
+    for entry in sorted(compact['cells'], key=priority):
         decisions = entry['review'].get('decisions', {})
         findings = '; '.join(f['code'] + (': ' + decisions[f['code']] if f['code'] in decisions else '')
                              + (f' ({f["region_count"]} regions)' if 'region_count' in f else '')
@@ -1183,6 +1201,7 @@ def main():
         review = [entry['cell'] for entry in reports if entry['review']['status'] != 'accepted']
         accepted = [entry['cell'] for entry in reports if entry['review']['status'] == 'accepted']
         needs_fix = [entry['cell'] for entry in reports if entry['review']['status'] == 'needs_fix']
+        automatic_review = [entry['cell'] for entry in reports if entry['automatic_status'] in ('review', 'error')]
         report = {
             'schema_version': 2,
             'sheet': str(Path(a.sheet).resolve()), 'requested_mode': a.mode, 'effective_mode': mode,
@@ -1190,16 +1209,23 @@ def main():
             'status': 'needs_fix' if needs_fix else 'needs_review' if review else 'accepted',
             'accepted_cells': accepted, 'needs_fix_cells': needs_fix,
             'exported': len(reports), 'skipped_blank': total_cells - len(reports),
-            'review_cells': review, 'cells': reports,
+            'review_cells': review, 'automatic_review_cells': automatic_review, 'cells': reports,
         }
         save_qa_report(qa_dir, report)
     print(f'{a.sheet} -> {a.outdir}  mode={mode}  background={background["hex"]}  exported={len(reports)}/{total_cells}')
-    print(f'QA: {destination / "qa" / "summary.md"}  status={report["status"]}  review_cells={review}')
+    print(f'QA: {destination / "qa" / "summary.md"}  status={report["status"]}  '
+          f'awaiting_acceptance={len(review)}  automatic_flags={len(automatic_review)}  '
+          f'unresolved_flags={len(set(review) & set(automatic_review))}  needs_fix={len(needs_fix)}')
     for warning in warnings:
         print(f'WARNING: {warning}')
     for entry in reports:
-        if entry['findings']:
-            print(f'{entry["file"]}: ' + ', '.join(item['code'] for item in entry['findings']))
+        state = entry['review']['status']
+        if state == 'accepted':
+            continue
+        findings = [item['code'] for item in entry['findings'] if item['severity'] in ('review', 'error')]
+        if findings or state in ('needs_fix', 'stale'):
+            print(f'{entry["file"]} [{state}/{entry["automatic_status"]}]: ' +
+                  (', '.join(findings) or entry['review'].get('reason', 'See visual review note in report.json.')))
 
 
 if __name__ == '__main__':
